@@ -1,0 +1,1218 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Oracle 調校室</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* layout concept: 左側是固定的儀表板（看症狀），右側是參數面板（動手調），底部黏著套用列 */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --surface2:#F4F6F8; --ink:#14202B; --ink2:#566472; --line:#D6DCE2; --track:#D3DAE1;
+  --accent:#1F4FD8; --accent-ink:#FFFFFF; --accent-bg:#E6ECFD;
+  --ok:#0F7F5A; --ok-bg:#DDF3EA; --warn:#9A5B00; --warn-bg:#FCEBCB; --crit:#C42B2B; --crit-bg:#FADCDC;
+  --font:'Noto Sans TC',system-ui,-apple-system,'PingFang TC','Microsoft JhengHei',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0D1318; --surface:#151D24; --surface2:#1B252E; --ink:#E6ECF1; --ink2:#9BA9B6; --line:#2A3743; --track:#33414D;
+  --accent:#7FA0FF; --accent-ink:#0B1220; --accent-bg:#1E2A4A;
+  --ok:#3CCB97; --ok-bg:#12372C; --warn:#F0A63A; --warn-bg:#3A2D12; --crit:#FF8080; --crit-bg:#41191B; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D1318; --surface:#151D24; --surface2:#1B252E; --ink:#E6ECF1; --ink2:#9BA9B6; --line:#2A3743; --track:#33414D;
+  --accent:#7FA0FF; --accent-ink:#0B1220; --accent-bg:#1E2A4A;
+  --ok:#3CCB97; --ok-bg:#12372C; --warn:#F0A63A; --warn-bg:#3A2D12; --crit:#FF8080; --crit-bg:#41191B; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 var(--font)}
+h1,h2,h3,h4,p,ul{margin:0}
+ul{padding:0;list-style:none}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1320px;margin:0 auto;padding-block:14px 28px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 20px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand svg{flex:none;color:var(--accent)}
+.brand h1{font-size:20px;font-weight:700;letter-spacing:.02em;line-height:1.2}
+.brand p{color:var(--ink2);font-size:12.5px}
+.top-r{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.speed{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.speed button{border:0;background:none;padding:6px 12px;font-size:13px}
+.speed button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;font-size:13.5px;font-weight:500;transition:background .15s,border-color .15s}
+.btn:hover:not(:disabled){border-color:var(--ink2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{background:var(--crit);color:#fff;border-color:var(--crit)}
+.btn.ghost{background:none}
+
+.tabs{display:flex;gap:8px;margin-top:14px;overflow-x:auto;padding-bottom:4px}
+.tab{flex:none;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 14px;text-align:left;min-width:150px}
+.tab small{display:block;color:var(--ink2);font-size:11.5px}
+.tab b{display:block;font-weight:500}
+.tab[aria-current="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.tab .st{color:var(--warn);letter-spacing:.1em;font-size:12px}
+
+.layout{display:grid;gap:16px;margin-top:14px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1000px){
+  .layout{grid-template-columns:minmax(0,440px) minmax(0,1fr);align-items:start}
+  .dash{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;scrollbar-width:thin}
+}
+.dash,.work{display:flex;flex-direction:column;gap:12px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h3,.card h4{font-size:12.5px;font-weight:700;color:var(--ink2);letter-spacing:.06em;margin-bottom:8px}
+
+/* 狀態 */
+.stat-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lamp{width:12px;height:12px;border-radius:50%;background:var(--ok);flex:none}
+.lamp.warn{background:var(--warn);animation:blink 1s infinite}
+.lamp.crit{background:var(--crit)}
+@keyframes blink{50%{opacity:.35}}
+.stat-top b{font-size:15px}
+.stat-top span{color:var(--ink2);font-size:12.5px}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.steps li{font-size:11.5px;text-align:center;padding:5px 2px;border-radius:6px;background:var(--surface2);color:var(--ink2)}
+.steps li.on{background:var(--ok-bg);color:var(--ok);font-weight:700}
+.steps li.cur{background:var(--warn-bg);color:var(--warn);font-weight:700}
+.failbox{margin-top:12px;border-radius:8px;background:var(--crit-bg);color:var(--crit);padding:10px 12px}
+.failbox p{margin-bottom:8px;font-weight:500}
+.failbox .row{display:flex;gap:8px;flex-wrap:wrap}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;min-width:0}
+.kpi .kl{font-size:12px;color:var(--ink2)}
+.kpi .kv{font:500 24px/1.25 var(--mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpi .kv small{font:400 12px var(--font);color:var(--ink2);margin-left:4px}
+.kpi .ks{font-size:11.5px;color:var(--ink2)}
+.kpi.k-ok .kv{color:var(--ok)} .kpi.k-warn .kv{color:var(--warn)} .kpi.k-crit .kv{color:var(--crit)}
+
+svg.chart{width:100%;height:auto;display:block}
+.chart .gl{stroke:var(--line);stroke-width:1}
+.chart .tx{fill:var(--ink2);font:10px var(--mono)}
+.chart .ln{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round}
+.chart .ar{fill:var(--accent);opacity:.12;stroke:none}
+.chart .gd{stroke:var(--ok);stroke-width:1.5;stroke-dasharray:5 4}
+.chart .gt{fill:var(--ok);font:10px var(--font)}
+.chart .dot{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+
+/* 記憶體 */
+.membar{display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--surface2);border:1px solid var(--line)}
+.membar i{display:block;height:100%}
+.m-os{background:var(--ink2)} .m-sga{background:var(--accent)} .m-rsv{background:repeating-linear-gradient(45deg,var(--accent-bg),var(--accent-bg) 4px,var(--surface2) 4px,var(--surface2) 8px)}
+.m-pga{background:var(--ok)} .m-over{background:var(--crit)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:11.5px;color:var(--ink2)}
+.legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:var(--c);vertical-align:-1px}
+.memnote{margin-top:6px;font-size:12px;color:var(--crit);font-weight:500}
+
+/* 等待事件 */
+.wait{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:2px 8px;align-items:center;margin-bottom:8px}
+.wait .wn{min-width:0}
+.wait .wn b{font-weight:500;font-size:13px}
+.wait .wn code{display:block;font:11px var(--mono);color:var(--ink2);overflow-wrap:anywhere}
+.wait .wp{font:12px var(--mono);text-align:right;color:var(--ink2)}
+.wait .wb{grid-column:1/3;height:6px;border-radius:3px;background:var(--surface2);overflow:hidden}
+.wait .wb i{display:block;height:100%;background:var(--warn);border-radius:3px}
+.wait:first-child .wb i{background:var(--crit)}
+
+/* 事件 */
+.log li{display:grid;grid-template-columns:40px minmax(0,1fr);gap:8px;padding:4px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.log li:last-child{border:0}
+.log time{font:11.5px var(--mono);color:var(--ink2);padding-top:1px}
+.log .crit{color:var(--crit)} .log .ok{color:var(--ok)} .log .warn{color:var(--warn)}
+
+/* 右側 */
+.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--accent-bg);color:var(--accent);margin-bottom:6px}
+.story h2{font-size:19px;margin-bottom:6px}
+.story p{color:var(--ink2);max-width:62ch}
+.goals{margin-top:12px;display:grid;gap:6px}
+.goals li{display:flex;gap:8px;align-items:baseline;font-size:13.5px}
+.goals .mk{width:18px;flex:none;text-align:center;font-weight:700;color:var(--ink2)}
+.goals li.pass .mk{color:var(--ok)} .goals li.fail .mk{color:var(--crit)}
+.goals .cur{margin-left:auto;font:12.5px var(--mono);color:var(--ink2);white-space:nowrap}
+.streak{display:flex;align-items:center;gap:10px;margin-top:12px}
+.streak .sbar{flex:1;height:8px;border-radius:4px;background:var(--surface2);overflow:hidden;border:1px solid var(--line)}
+.streak .sbar i{display:block;height:100%;background:var(--ok);transition:width .3s}
+.streak span{font:12.5px var(--mono);color:var(--ink2);white-space:nowrap}
+.hintrow{margin-top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.hints li{font-size:13px;background:var(--warn-bg);color:var(--ink);border-radius:8px;padding:6px 10px;margin-top:6px}
+
+.guide{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:12.5px;color:var(--ink2);padding:2px 2px 0}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.b-dyn{background:var(--ok-bg);color:var(--ok)} .b-def{background:var(--warn-bg);color:var(--warn)} .b-static{background:var(--crit-bg);color:var(--crit)}
+
+.pgroup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px 4px;min-width:0}
+.pgroup>h3{font-size:12.5px;color:var(--ink2);letter-spacing:.06em;margin-bottom:4px}
+.prow{padding:12px 0;border-top:1px solid var(--line);min-width:0}
+.pgroup>h3+.prow{border-top:0}
+.prow.staged{background:var(--accent-bg);margin-inline:-16px;padding-inline:16px}
+.ptop{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.plabel{font-weight:500;font-size:14.5px}
+.pname{display:block;font:11px var(--mono);color:var(--ink2);overflow-wrap:anywhere}
+.pctl{display:flex;align-items:center;gap:12px;margin-top:6px}
+.pctl output{font:500 14px var(--mono);min-width:84px;text-align:right;font-variant-numeric:tabular-nums}
+.phint{font-size:12.5px;color:var(--ink2);margin-top:2px}
+.pnote{font-size:12px;margin-top:4px;color:var(--ink2);font-family:var(--mono)}
+.pnote.pend{color:var(--crit)} .pnote.warn{color:var(--warn)}
+.chip{font-size:11px;font-weight:700;color:var(--accent);margin-left:6px}
+
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:28px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--track)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:0 0 0 1px var(--accent);margin-top:-7px}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--track)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:0 0 0 1px var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+.seg button{flex:1 1 150px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 10px;font-size:13px;text-align:left}
+.seg button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:700}
+
+.bar{position:sticky;bottom:calc(8px + env(safe-area-inset-bottom,0px));background:var(--surface);border:1px solid var(--ink2);border-radius:12px;padding:12px 16px;box-shadow:0 6px 24px rgba(0,0,0,.14);display:flex;flex-direction:column;gap:10px;z-index:5}
+.bar h4{font-size:12px;color:var(--ink2);letter-spacing:.06em;margin-bottom:4px}
+.bar-idle{color:var(--ink2);font-size:13px}
+.chg li{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;font-size:13px;padding:2px 0}
+.chg .cv{font-family:var(--mono);color:var(--ink2);font-size:12.5px;margin-left:auto}
+.persist{display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.persist input{width:16px;height:16px;accent-color:var(--accent)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.msgs li{font-size:12.5px;padding:2px 0}
+.msgs .e{color:var(--crit)} .msgs .o{color:var(--ok)} .msgs .i{color:var(--warn)}
+.pend li{font-size:12.5px;font-family:var(--mono);color:var(--warn);padding:1px 0;overflow-wrap:anywhere}
+.confirm{background:var(--warn-bg);border-radius:8px;padding:10px 12px}
+.confirm p{margin-bottom:8px;font-size:13px}
+.divider{border:0;border-top:1px solid var(--line);margin:0}
+
+.nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px}
+.node{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface2);display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink2)}
+.node b{font-size:13px;font-weight:700}
+.node.up{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
+.node.boot{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+.node.fail{border-color:var(--crit);background:var(--crit-bg);color:var(--crit)}
+.fbar{height:14px;border-radius:7px;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+.fbar i{display:block;height:100%;width:0;background:var(--ok);transition:width .3s}
+.fra.warn .fbar i{background:var(--warn)} .fra.crit .fbar i{background:var(--crit)}
+.fl{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font:12px var(--mono);color:var(--ink2);margin-top:6px}
+.fra.crit .fl{color:var(--crit)}
+#fraBtn{margin-top:8px}
+.overlay{position:fixed;inset:0;background:rgba(5,10,15,.55);display:flex;align-items:center;justify-content:center;z-index:20;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.overlay[hidden]{display:none}
+.win{background:var(--surface);border-radius:16px;max-width:520px;width:100%;max-height:100%;overflow:auto;padding:22px 22px 18px;border:1px solid var(--line)}
+.win h2{font-size:22px}
+.win .big{font-size:34px;color:var(--warn);letter-spacing:.15em;margin:4px 0 2px}
+.win h4{font-size:12.5px;color:var(--ink2);margin:14px 0 6px;letter-spacing:.06em}
+.win li{font-size:13.5px;padding:3px 0;display:flex;gap:8px}
+.win li .mk{flex:none;width:18px;font-weight:700;color:var(--ok)} .win li.no .mk{color:var(--ink2)}
+.win .row{margin-top:16px;justify-content:flex-end}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <ellipse cx="17" cy="8" rx="11" ry="4.5"/><path d="M6 8v9c0 2.5 4.9 4.5 11 4.5S28 19.5 28 17V8"/><path d="M6 17v9c0 2.5 4.9 4.5 11 4.5S28 28.5 28 26v-9"/>
+      </svg>
+      <div><h1>Oracle 調校室</h1><p>調參數、看症狀，分清楚哪些要重啟</p></div>
+    </div>
+    <div class="top-r">
+      <div class="speed" role="group" aria-label="模擬速度">
+        <button data-act="speed" data-v="0" aria-pressed="false">暫停</button>
+        <button data-act="speed" data-v="1" aria-pressed="true">1×</button>
+        <button data-act="speed" data-v="3" aria-pressed="false">3×</button>
+      </div>
+      <button class="btn ghost" data-act="reset">重玩此關</button>
+    </div>
+  </header>
+  <nav id="tabs" class="tabs" aria-label="情境"></nav>
+
+  <div class="layout">
+    <aside class="dash" aria-label="資料庫儀表板">
+      <section class="card" id="status"></section>
+      <section class="kpis" id="kpis"></section>
+      <section class="card"><h4>回應時間</h4><svg class="chart" id="cLat" viewBox="0 0 400 120" role="img" aria-label="回應時間走勢圖"></svg></section>
+      <section class="card"><h4>每秒交易數</h4><svg class="chart" id="cTps" viewBox="0 0 400 120" role="img" aria-label="每秒交易數走勢圖"></svg></section>
+      <section class="card"><h4>伺服器記憶體</h4><div id="mem"></div></section>
+      <section class="card" id="racCard" hidden></section>
+      <section class="card" id="fraCard" hidden></section>
+      <section class="card"><h4>資料庫都在等什麼</h4><div id="waits"></div></section>
+      <section class="card"><h4>事件紀錄</h4><ul class="log" id="log"></ul></section>
+    </aside>
+
+    <main class="work">
+      <section class="card story" id="story"></section>
+      <div class="guide" aria-label="標籤說明">
+        <span>參數生效時機：</span>
+        <span><span class="badge b-dyn">即時生效</span> 套用後馬上改變</span>
+        <span><span class="badge b-def">新連線生效</span> 舊連線不受影響</span>
+        <span><span class="badge b-static">需重啟</span> 重啟資料庫才會改變</span>
+      </div>
+      <div id="params" style="display:flex;flex-direction:column;gap:12px"></div>
+      <section class="bar" id="bar" aria-label="套用變更"></section>
+    </main>
+  </div>
+</div>
+
+<div class="overlay" id="win" hidden>
+  <div class="win" role="dialog" aria-modal="true" aria-labelledby="winTitle" id="winBox"></div>
+</div>
+<script>
+'use strict';
+/* ===== 模型：參數、情境、效能計算（純函式） ===== */
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+const KIND = {
+  static:   { cls: 'b-static', text: '需重啟' },
+  dynamic:  { cls: 'b-dyn',    text: '即時生效' },
+  deferred: { cls: 'b-def',    text: '新連線生效' }
+};
+
+const GROUPS = [
+  { id: 'mem',  title: '記憶體' },
+  { id: 'conn', title: '連線與游標' },
+  { id: 'sql',  title: 'SQL 與優化器' },
+  { id: 'io',   title: '寫入與日誌' },
+  { id: 'par',  title: '平行與還原' },
+  { id: 'arch', title: '歸檔與備份' },
+  { id: 'rac',  title: '叢集 RAC' }
+];
+
+const PARAMS = [
+  { k: 'sga_max_size', name: 'SGA_MAX_SIZE', group: 'mem', label: 'SGA 記憶體上限', kind: 'static', unit: 'GB',
+    hint: 'SGA 的天花板。調高或調低都要重啟才會生效。' },
+  { k: 'sga_target', name: 'SGA_TARGET', group: 'mem', label: 'SGA 目前大小', kind: 'dynamic', unit: 'GB',
+    hint: '資料快取與共用池的總量。在上限以內可以即時增減。' },
+  { k: 'asmm', name: 'SGA_TARGET（0 = 關閉 ASMM）', group: 'mem', label: 'SGA 自動管理 (ASMM)', kind: 'dynamic', type: 'seg', adv: true,
+    options: [['ON', '開啟：系統自動分配各區塊'], ['OFF', '關閉：自己指定共用池與快取']],
+    hint: '開啟時，系統會在 SGA 目前大小之內，依負載自動調整共用池與資料快取。關閉後，各區塊就是你設定的固定大小。' },
+  { k: 'shared_pool_size', name: 'SHARED_POOL_SIZE', group: 'mem', label: '共用池大小', kind: 'dynamic', unit: 'GB', adv: true,
+    hint: '存放解析過的 SQL。ASMM 開啟時只是「最小保證值」，關閉時是固定大小。太小會出現 ORA-04031。' },
+  { k: 'db_cache_size', name: 'DB_CACHE_SIZE', group: 'mem', label: '資料快取大小', kind: 'dynamic', unit: 'GB', adv: true,
+    hint: '存放資料區塊。ASMM 開啟時是最小保證值，關閉時是固定大小。共用池加快取不能超過 SGA 上限。' },
+  { k: 'pga', name: 'PGA_AGGREGATE_TARGET', group: 'mem', label: 'PGA 工作記憶體', kind: 'dynamic', unit: 'GB',
+    hint: '排序與雜湊用的工作記憶體總額，不夠時會溢出到磁碟。' },
+  { k: 'processes', name: 'PROCESSES', group: 'conn', label: '最大連線處理程序', kind: 'static', unit: '',
+    min: 50, max: 2000, step: 10,
+    hint: '同時能連進來的處理程序上限，系統自己還要佔用約 40 個。' },
+  { k: 'open_cursors', name: 'OPEN_CURSORS', group: 'conn', label: '每個連線游標上限', kind: 'dynamic', unit: '',
+    min: 50, max: 1000, step: 25,
+    hint: '每個連線同時能開的游標數，不夠會直接報錯。' },
+  { k: 'session_cached_cursors', name: 'SESSION_CACHED_CURSORS', group: 'sql', label: '連線游標快取', kind: 'deferred', unit: '',
+    min: 0, max: 200, step: 10,
+    hint: '每個連線快取的游標數，只有新建立的連線才會用到新值。' },
+  { k: 'cursor_sharing', name: 'CURSOR_SHARING', group: 'sql', label: 'SQL 共用模式', kind: 'dynamic', type: 'seg',
+    options: [['EXACT', 'EXACT 逐字比對'], ['FORCE', 'FORCE 強制共用']],
+    hint: 'EXACT 只共用字面完全相同的 SQL。FORCE 會把常數換成變數再共用。' },
+  { k: 'optimizer_mode', name: 'OPTIMIZER_MODE', group: 'sql', label: '優化器偏好', kind: 'dynamic', type: 'seg',
+    options: [['ALL_ROWS', 'ALL_ROWS 整體最快'], ['FIRST_ROWS_10', 'FIRST_ROWS_10 先回前幾筆']],
+    hint: '決定執行計畫偏向先回第一批資料，還是整批跑完最快。' },
+  { k: 'mbrc', name: 'DB_FILE_MULTIBLOCK_READ_COUNT', group: 'sql', label: '全表掃描一次讀取區塊數', kind: 'dynamic', unit: '',
+    min: 8, max: 256, step: 8,
+    hint: '越大掃描越快，大約 128 以後幾乎沒有額外好處。' },
+  { k: 'log_buffer', name: 'LOG_BUFFER', group: 'io', label: '重做日誌緩衝區', kind: 'static', unit: 'MB',
+    min: 1, max: 256, step: 1,
+    hint: '交易寫入日誌前的暫存區，太小會讓提交排隊等待。' },
+  { k: 'dbwr', name: 'DB_WRITER_PROCESSES', group: 'io', label: '資料寫入程序數', kind: 'static', unit: '',
+    min: 1, max: 8, step: 1,
+    hint: '負責把已修改的資料寫回磁碟。寫入量大時一個程序會忙不過來。' },
+  { k: 'archivelog', name: 'ARCHIVELOG 模式', group: 'arch', label: '歸檔模式', kind: 'static', type: 'seg', adv: true,
+    options: [['NOARCHIVELOG', 'NOARCHIVELOG 不保留歸檔'], ['ARCHIVELOG', 'ARCHIVELOG 保留歸檔']],
+    hint: '要在掛載階段才能切換，所以得重啟。開啟後才能還原到任意時間點，也才能在不停機的情況下備份。代價是會一直產生歸檔日誌。' },
+  { k: 'fra_size', name: 'DB_RECOVERY_FILE_DEST_SIZE', group: 'arch', label: '快速復原區大小 (FRA)', kind: 'dynamic', unit: 'GB', adv: true,
+    min: 10, max: 600, step: 10,
+    hint: '歸檔日誌存放的空間。塞滿時，所有會產生日誌的操作都會卡住 (ORA-00257)。' },
+  { k: 'arch_keep', name: 'RMAN ARCHIVELOG DELETION POLICY', group: 'arch', label: '歸檔日誌保留時間', kind: 'dynamic', unit: '小時', adv: true,
+    min: 1, max: 48, step: 1,
+    hint: '備份之後歸檔日誌還要留多久才能刪。留越久越安全，也越吃空間。' },
+  { k: 'arch_procs', name: 'LOG_ARCHIVE_MAX_PROCESSES', group: 'arch', label: '歸檔程序數', kind: 'dynamic', unit: '', adv: true,
+    min: 1, max: 10, step: 1,
+    hint: '負責把寫滿的重做日誌複製出去。大約每個程序每秒處理 4 MB，跟不上時交易會等歸檔。' },
+  { k: 'cluster_db', name: 'CLUSTER_DATABASE', group: 'rac', label: '叢集模式 (RAC)', kind: 'static', type: 'seg', adv: true,
+    options: [['FALSE', 'FALSE 單一執行個體'], ['TRUE', 'TRUE 啟用 RAC']],
+    hint: '把資料庫改成多個節點共用同一份資料。這是啟動時就要決定的參數，所以要重啟。' },
+  { k: 'rac_nodes', name: '運作中的節點數（啟停執行個體）', group: 'rac', label: '運作節點數', kind: 'dynamic', unit: '', adv: true,
+    min: 1, max: 4, step: 1,
+    hint: '叢集模式啟用後才有作用。新節點約 5 秒後加入。每個節點都有自己的 CPU、記憶體與連線上限，授權費也是。' },
+  { k: 'svc_route', name: 'SERVICE 連線分流', group: 'rac', label: '服務連線分流', kind: 'deferred', type: 'seg', adv: true,
+    options: [['ANY', 'ANY 任意節點'], ['PARTITIONED', 'PARTITIONED 依業務固定節點']],
+    hint: '固定分流後，同一批資料大多只在一個節點被用到，節點之間傳資料區塊的次數會大減。只有新連線會依新規則分配。' },
+  { k: 'pms', name: 'PARALLEL_MAX_SERVERS', group: 'par', label: '平行處理程序上限', kind: 'dynamic', unit: '',
+    min: 0, max: 128, step: 4,
+    hint: '平行查詢與批次可用的程序數。太多會把 CPU 搶光。' },
+  { k: 'undo_retention', name: 'UNDO_RETENTION', group: 'par', label: 'Undo 保留時間', kind: 'dynamic', unit: '秒',
+    min: 60, max: 7200, step: 60,
+    hint: '舊版資料保留多久。報表跑得比這久就會「快照太舊」，但保留越久越吃空間。' }
+];
+
+const WAITS = {
+  cpu:    { zh: '處理器運算與解析', en: 'CPU time' },
+  seq:    { zh: '快取沒命中，讀磁碟', en: 'db file sequential read' },
+  scat:   { zh: '全表掃描讀取', en: 'db file scattered read' },
+  temp:   { zh: '排序溢出到磁碟', en: 'direct path read/write temp' },
+  logbuf: { zh: '等重做日誌緩衝區', en: 'log buffer space' },
+  freebuf:{ zh: '等資料寫入程序騰出空間', en: 'free buffer waits' },
+  latch:  { zh: '硬解析搶共用池', en: 'library cache: mutex X' },
+  par:    { zh: '平行批次處理', en: 'PX Deq: Execute Reply' },
+  swap:   { zh: '記憶體不足，系統換頁', en: 'OS swap' },
+  gc:     { zh: '節點之間傳送資料區塊', en: 'gc buffer busy / gc cr block' },
+  archwait:{ zh: '等歸檔程序騰出日誌', en: 'log file switch (archiving needed)' }
+};
+
+const usersAt = (w, t) => Math.round(w.users * (w.curve ? w.curve(t) : 1 + 0.08 * Math.sin(t / 7)));
+
+function inFailure(w, t) {
+  if (!w.failure) return false;
+  const x = ((t % w.failure.every) + w.failure.every) % w.failure.every;
+  return x >= w.failure.at && x < w.failure.at + w.failure.dur;
+}
+function fraTargetOf(cfg, w) { return cfg.archivelog === 'ARCHIVELOG' ? w.redoMBps * 3.6 * cfg.arch_keep : 0; }
+
+function validateSga(cfg) {
+  if (cfg.asmm === 'OFF') {
+    const sum = cfg.shared_pool_size + cfg.db_cache_size + 0.5;
+    if (sum > cfg.sga_max_size)
+      return { ok: false, msg: `共用池 ${cfg.shared_pool_size} GB 加資料快取 ${cfg.db_cache_size} GB，再加其他區塊共 ${sum} GB，超過 SGA 上限 ${cfg.sga_max_size} GB (ORA-00384)` };
+  } else {
+    const tgt = Math.min(cfg.sga_target, cfg.sga_max_size), floor = cfg.shared_pool_size + cfg.db_cache_size;
+    if (floor > tgt * 0.92)
+      return { ok: false, msg: `共用池與資料快取的最小值加起來 ${floor} GB，超過 SGA 目前大小 ${tgt} GB 能分配的 ${(tgt * 0.92).toFixed(1)} GB (ORA-00824)` };
+  }
+  return { ok: true };
+}
+
+function startupCheck(cfg, w) {
+  if (cfg.sga_max_size + cfg.pga > w.ram - 1) {
+    return { ok: false,
+      msg: `記憶體不足：SGA 上限 ${cfg.sga_max_size} GB 加 PGA ${cfg.pga} GB 超過可用的 ${w.ram - 1} GB，無法建立執行個體` };
+  }
+  const v = validateSga({ ...cfg, sga_target: Math.min(cfg.sga_target, cfg.sga_max_size) });
+  if (!v.ok) return { ok: false, msg: '參數檔的 SGA 設定互相矛盾：' + v.msg };
+  return { ok: true };
+}
+
+function compute(cfg, w, t, warm, ext) {
+  ext = ext || {};
+  const racOn = cfg.cluster_db === 'TRUE';
+  const nodesCfg = racOn ? (ext.nodes != null ? ext.nodes : cfg.rac_nodes) : 1;
+  const failing = inFailure(w, t);
+  let alive = nodesCfg;
+  if (failing) {
+    if (nodesCfg < 1.99) return { outage: true, err: 1, failing, alive: 0, nodes: nodesCfg };
+    alive = nodesCfg - 1;
+  }
+  const part = cfg.svc_route === 'PARTITIONED';
+  const sNeed = w.sharedNeed * (cfg.cursor_sharing === 'FORCE' ? 0.5 : 1);
+
+  /* 記憶體：ASMM 開啟時自動分配，關閉時使用固定大小 */
+  const asmmOn = cfg.asmm !== 'OFF';
+  let sga, shared, cache;
+  if (asmmOn) {
+    sga = Math.min(cfg.sga_target, cfg.sga_max_size);
+    shared = Math.max(cfg.shared_pool_size, Math.min(sNeed * 1.3, sga * 0.4));
+    cache = Math.max(cfg.db_cache_size, sga * 0.92 - shared);
+  } else {
+    shared = cfg.shared_pool_size; cache = cfg.db_cache_size;
+    sga = Math.min(shared + cache + 0.5, cfg.sga_max_size);
+  }
+  const pga = cfg.pga;
+  const resident = sga + pga + 1;
+  const swapMul = 1 + Math.max(0, (resident - w.ram) / w.ram) * 14;
+  const wsEff = racOn && part ? w.workingSet / Math.max(1, alive) : w.workingSet;
+  const hitRaw = clamp(1 - Math.exp(-2 * cache / wsEff), 0.3, 0.9995);
+  const hit = hitRaw * warm + 0.3 * (1 - warm);
+  const shErr = w.literal > 0.2 && shared < sNeed * 0.7 ? clamp((sNeed * 0.7 - shared) / (sNeed * 0.7), 0, 1) * 0.4 : 0;
+
+  const users = usersAt(w, t);
+  const connected = Math.min(users, Math.max(0, (cfg.processes - 40) * alive));
+  const connErr = users > 0 ? 1 - connected / users : 0;
+  const curErr = cfg.open_cursors < w.cursorsNeed ? clamp((w.cursorsNeed - cfg.open_cursors) / w.cursorsNeed, 0, 1) * 0.6 : 0;
+  const coresTot = w.cores * alive;
+
+  const hard = cfg.cursor_sharing === 'FORCE' ? w.literal * 0.04 : w.literal;
+  const scc = clamp(cfg.session_cached_cursors / w.hotCursors, 0, 1);
+  const parse = hard * w.hardCost + (1 - hard) * 0.4 * (1 - 0.6 * scc);
+  const latch = hard * Math.max(0, 1 - shared / sNeed) * 12;
+  const dbwrCpu = Math.max(0, cfg.dbwr - w.cores / 2) * 0.5;
+  const sortCpu = w.sortMB * 0.02;
+  const racMul = racOn && alive > 1.01 ? 1 + 0.04 * (alive - 1) : 1;
+  const cpuC = (w.cpuBase + parse + dbwrCpu + sortCpu) * racMul;
+
+  const io = w.lio * (1 - hit) * 0.8;
+  const active = Math.max(1, connected / Math.max(1, alive) * w.sortActive);
+  const spill = w.sortMB > 0 ? clamp(1 - (pga * 1024 / active) / w.sortMB, 0, 1) : 0;
+  const temp = spill * w.sortMB * 0.5;
+  const scan = w.scanMB * 0.12 * (1 + 3 * (1 - Math.min(1, cfg.mbrc / 128))) * (1 + (1 - hit) * 0.2);
+  const first = cfg.optimizer_mode !== 'ALL_ROWS';
+  const optMul = 1 + w.reportShare * (first ? 0.3 : 0) - (1 - w.reportShare) * (first ? 0.1 : 0);
+  const needLB = Math.max(1, w.redoMBps * 1.5);
+  const logb = cfg.log_buffer < needLB ? clamp((needLB / cfg.log_buffer - 1) * w.commitW, 0, 60) : 0;
+  const cap = cfg.dbwr * 30;
+  const fb = cap < w.writeMBps ? clamp((w.writeMBps / cap - 1) * w.writeW, 0, 80) : 0;
+  const parEff = Math.min(cfg.pms, w.cores * 2);
+  const par = w.batchMs > 0
+    ? w.batchMs / (1 + parEff * 0.4) * (cfg.pms > w.cores * 4 ? 1 + (cfg.pms - w.cores * 4) / (w.cores * 4) * 0.5 : 1)
+    : 0;
+
+  /* 歸檔 */
+  const archOn = cfg.archivelog === 'ARCHIVELOG';
+  const archCap = cfg.arch_procs * 4;
+  const archWait = archOn && w.redoMBps > archCap * 0.9 ? clamp((w.redoMBps / (archCap * 0.9) - 1) * w.archW, 0, 70) : 0;
+  const fraTarget = fraTargetOf(cfg, w);
+  const fraUsed = ext.fraUsed != null ? ext.fraUsed : fraTarget;
+  const fraFull = archOn && fraUsed >= cfg.fra_size * 0.98;
+  const archErr = fraFull ? 0.85 : 0;
+
+  /* RAC：節點之間傳送資料區塊 */
+  const gc = racOn && alive > 1.01 ? w.shareFrac * (1 - 1 / alive) * w.gcCost * (part ? 0.2 : 1) : 0;
+
+  const comps = { cpu: cpuC, seq: io, scat: scan, temp, logbuf: logb, freebuf: fb, latch, par, gc, archwait: archWait };
+  const base = Object.values(comps).reduce((a, b) => a + b, 0);
+  const pre = base * optMul;
+  const lat0 = pre * swapMul;
+  const tps0 = connected / (w.think + lat0 / 1000);
+  const cpuMs = cpuC * optMul * swapMul;
+  const util0 = tps0 * cpuMs / 1000 / coresTot;
+  const queueF = 1 + Math.max(0, util0 - 0.65) * 4;
+  const lat = lat0 * queueF;
+  const tps = connected / (w.think + lat / 1000);
+  const cpuUtil = clamp(tps * cpuMs / 1000 / coresTot, 0, 1);
+
+  const reportDur = lat / 1000 * (w.reportScale || 0);
+  const snapErr = w.reportScale && cfg.undo_retention < reportDur
+    ? clamp(0.04 + 0.1 * (reportDur / cfg.undo_retention - 1), 0, 0.3) : 0;
+  const undoNeed = cfg.undo_retention * (w.undoMBps || 0);
+  const undoErr = w.undoMBps && undoNeed > w.undoSpace ? clamp(undoNeed / w.undoSpace - 1, 0, 1) * 0.3 : 0;
+  const err = 1 - (1 - connErr) * (1 - curErr) * (1 - snapErr) * (1 - undoErr) * (1 - shErr) * (1 - archErr);
+
+  const waits = {};
+  for (const k in comps) waits[k] = comps[k] * optMul;
+  waits.cpu += lat - lat0;
+  waits.swap = pre * (swapMul - 1);
+  const wsum = Object.values(waits).reduce((a, b) => a + b, 0) || 1;
+  const waitList = Object.keys(waits).map(k => ({ k, ms: waits[k], pct: waits[k] / wsum }))
+    .filter(x => x.ms > 0.01).sort((a, b) => b.ms - a.ms);
+
+  return {
+    users, connected, lat, tps, hit, hardPerSec: tps * hard, cpuUtil, err,
+    parts: { conn: connErr, cur: curErr, snap: snapErr, undo: undoErr, shared: shErr, arch: archErr },
+    swap: swapMul > 1.02, resident, sga, pga, sharedG: shared, cacheG: cache, asmmOn,
+    waits: waitList, reportDur, undoNeed, spill,
+    alive, nodes: nodesCfg, failing, fraUsed, fraTarget, fraFull, util: util0
+  };
+}
+
+/* ===== 情境 ===== */
+const baseW = {
+  think: 1, literal: 0.1, hotCursors: 50, cursorsNeed: 200, cpuBase: 3, hardCost: 9, lio: 12,
+  sortMB: 1, sortActive: 0.1, scanMB: 0, reportShare: 0.1, redoMBps: 0.5, commitW: 5,
+  writeMBps: 4, writeW: 10, batchMs: 0, sharedNeed: 0.6, undoMBps: 0, undoSpace: 0, reportScale: 0,
+  shareFrac: 0.3, gcCost: 6, archW: 12
+};
+const baseCfg = {
+  sga_max_size: 4, sga_target: 2, pga: 1, processes: 150, open_cursors: 300, session_cached_cursors: 20,
+  cursor_sharing: 'EXACT', optimizer_mode: 'ALL_ROWS', mbrc: 16, log_buffer: 8, dbwr: 1, pms: 8, undo_retention: 900,
+  asmm: 'ON', shared_pool_size: 0.25, db_cache_size: 0.5,
+  archivelog: 'NOARCHIVELOG', fra_size: 50, arch_keep: 8, arch_procs: 4,
+  cluster_db: 'FALSE', rac_nodes: 1, svc_route: 'ANY'
+};
+
+const SCENARIOS = [
+  {
+    id: 's1', tag: '入門', title: '打卡高峰', maxRestarts: 1,
+    story: '每天早上 9 點，260 位員工同時打卡。這套系統沿用剛上線時的小規模設定，現在有人連不上，連上的人也覺得慢。',
+    goal: { lat: 7.5, err: 0.01, latUnit: 'ms' },
+    w: { ...baseW, ram: 16, cores: 4, users: 260, workingSet: 3.5, literal: 0.15 },
+    cfg: { ...baseCfg },
+    hints: [
+      '先看錯誤率：有人被擋在門外，連線數的上限由 PROCESSES 決定。',
+      'PROCESSES 要重啟才會生效。可以先寫進參數檔，其他調整做完後只重啟一次。',
+      '回應時間偏慢，是因為資料快取放不下熱資料。SGA_TARGET 可以即時調大，但不能超過 SGA_MAX_SIZE。'
+    ],
+    lessons: [
+      '需重啟的參數只能寫進參數檔，重啟後才生效。連線數上限就是典型例子。',
+      '即時生效的參數在上限內可以直接調整，SGA_TARGET 不用重啟。',
+      '重啟會清空資料快取、需要預熱，所以靜態變更適合集中起來一次處理。'
+    ]
+  },
+  {
+    id: 's2', tag: '進階', title: '雙十一搶購', maxRestarts: 1,
+    story: '活動開跑，使用者湧入。商品頁的 SQL 把商品編號直接寫在字串裡，每一句看起來都是新的，資料庫忙著重新解析。交易寫入量也暴增。',
+    goal: { lat: 15, err: 0.02, latUnit: 'ms' },
+    w: { ...baseW, ram: 32, cores: 8, users: 900, workingSet: 8, literal: 0.7, hotCursors: 80, cursorsNeed: 250,
+         cpuBase: 2.5, hardCost: 10, lio: 14, redoMBps: 14, writeMBps: 90, sharedNeed: 3,
+         curve: t => 1 + 0.25 * Math.exp(-Math.pow(((t % 90) - 45) / 14, 2)) },
+    cfg: { ...baseCfg, sga_max_size: 12, sga_target: 10, pga: 2, processes: 400 },
+    hints: [
+      '看右邊的等待事件：CPU 與解析佔很大一塊，因為每句 SQL 都在硬解析。',
+      'CURSOR_SHARING 可以即時切換，馬上就能看到 CPU 下降。',
+      '連線數、日誌緩衝區、資料寫入程序都要重啟。把它們全部改好，再重啟一次。'
+    ],
+    lessons: [
+      '即時生效的設定能先止血：切到 FORCE 馬上降低硬解析，但不能解決所有問題。',
+      '同時有多項需重啟的設定時，一起寫入參數檔再重啟一次，比重啟三次划算。',
+      '看等待事件找瓶頸，比憑感覺亂調有效。'
+    ]
+  },
+  {
+    id: 's3', tag: '進階', title: '月底財務報表', maxRestarts: 0,
+    story: '財務部同時跑 40 份大型報表，排序與彙總把記憶體吃光，報表跑到一半還會冒出「快照太舊」。這一關的設定幾乎都能即時調整，不用重啟。',
+    goal: { lat: 250, err: 0.02, latUnit: 'ms' },
+    w: { ...baseW, ram: 64, cores: 8, users: 40, think: 5, workingSet: 30, literal: 0.05, hotCursors: 30, cursorsNeed: 350,
+         cpuBase: 25, lio: 250, sortMB: 800, sortActive: 0.6, scanMB: 300, reportShare: 0.9,
+         redoMBps: 1, writeMBps: 6, sharedNeed: 1, undoMBps: 1.5, undoSpace: 4000, reportScale: 2400 },
+    cfg: { ...baseCfg, sga_max_size: 16, sga_target: 8, pga: 2, processes: 300, optimizer_mode: 'FIRST_ROWS_10',
+           mbrc: 8, dbwr: 2, undo_retention: 300 },
+    hints: [
+      '等待事件裡「排序溢出到磁碟」很大，PGA 太小了。調大它，馬上看得到差別。',
+      '報表是整批處理，優化器偏好 ALL_ROWS 比較合適。全表掃描一次讀取區塊數也太小。',
+      '出現「快照太舊」代表 Undo 保留時間比報表跑得還短。但保留太久，Undo 空間會被塞滿。'
+    ],
+    lessons: [
+      'PGA 不夠時，排序會溢出到磁碟，那是最昂貴的一種慢。',
+      '優化器偏好要配合工作負載：報表和線上交易想要的東西不一樣。',
+      'Undo 保留時間要比最長的報表久，又不能久到把空間塞滿。這種取捨沒有標準答案。'
+    ]
+  },
+  {
+    id: 's4', tag: '專家', title: '夜間批次 ETL', maxRestarts: 1,
+    story: '每晚 11 點，8 條批次工作把當天資料整批搬進資料倉儲。寫入量很大，工作卻沒有分給平行處理程序。目標是壓低每個批次步驟的處理時間。',
+    goal: { lat: 800, err: 0.02, latUnit: 'ms' },
+    w: { ...baseW, ram: 64, cores: 16, users: 8, think: 2, workingSet: 40, literal: 0, hotCursors: 20, cursorsNeed: 150,
+         cpuBase: 20, lio: 300, sortMB: 1500, sortActive: 1, scanMB: 600, reportShare: 0.8,
+         redoMBps: 60, commitW: 3, writeMBps: 240, writeW: 4, batchMs: 6000, sharedNeed: 0.5 },
+    cfg: { ...baseCfg, sga_max_size: 16, sga_target: 12, pga: 4, processes: 300, optimizer_mode: 'FIRST_ROWS_10',
+           log_buffer: 16, dbwr: 2, pms: 0 },
+    hints: [
+      '「平行批次處理」佔了絕大部分時間。PARALLEL_MAX_SERVERS 是 0，工作全部排隊單跑。',
+      '平行處理程序大約開到 CPU 核心數的兩倍就夠了，再多只會搶 CPU。',
+      '寫入量這麼大，日誌緩衝區和資料寫入程序都要加。這兩個需要重啟。'
+    ],
+    lessons: [
+      '平行度有甜蜜點：開到核心數的兩倍左右效果最好，再多只是互相搶資源。',
+      '批次作業和線上交易的設定方向常常相反，例如優化器偏好。',
+      '把會讓你重啟的設定一次想清楚，夜間維護時段才夠用。'
+    ]
+  },
+  {
+    id: 's5', tag: '專家', title: '停電前的重啟', maxRestarts: 1,
+    story: '機房今晚停電維護，資料庫必須重啟。你接手時發現同事昨天把 SGA_MAX_SIZE 改成 20 GB，寫進了參數檔，但還沒重啟。伺服器只有 16 GB 記憶體，而且晚上有 400 人要連線。',
+    goal: { lat: 10, err: 0.01, latUnit: 'ms' },
+    w: { ...baseW, ram: 16, cores: 4, users: 400, workingSet: 5, literal: 0.2, redoMBps: 0.8, writeMBps: 10, sharedNeed: 1 },
+    cfg: { ...baseCfg, sga_max_size: 6, sga_target: 4 },
+    spfileDiff: { sga_max_size: 20 },
+    hints: [
+      '看下方「重啟後將生效」清單：參數檔裡有一項改動還沒生效，數字不太對勁。',
+      'SGA_MAX_SIZE 加 PGA 必須小於伺服器記憶體。先把 SGA_MAX_SIZE 改回合理的值。',
+      '如果已經重啟失敗，用「備份參數檔」啟動可以回到上次能用的設定。連線數也別忘了。'
+    ],
+    lessons: [
+      '寫進參數檔的需重啟參數，會安靜地躺到下次重啟才發作。重啟前一定要檢查待生效的變更。',
+      '開不起來時，備份參數檔（PFILE）是退路。',
+      '修好一個問題的同時，順便把其他需重啟的設定一起處理，才不用再重啟一次。'
+    ]
+  }
+  ,
+  {
+    id: 's6', tag: '入門', title: '手動分配 SGA', maxRestarts: 1,
+    extra: ['asmm', 'shared_pool_size', 'db_cache_size'],
+    story: '前任 DBA 關掉了自動管理（ASMM），把共用池和資料快取各自設成固定大小。最近 SQL 變多，共用池不夠用，開始出現 ORA-04031，資料快取也太小。要想清楚三件事：SGA 上限是天花板，SGA 目前大小是現在用多少，共用池與快取在自動管理底下又代表什麼。',
+    goal: { lat: 10, err: 0.01 },
+    w: { ...baseW, ram: 32, cores: 8, users: 300, workingSet: 9, literal: 0.5, hotCursors: 80, cursorsNeed: 250,
+         hardCost: 3, lio: 60, sharedNeed: 2.5, redoMBps: 1, writeMBps: 8 },
+    cfg: { ...baseCfg, sga_max_size: 10, sga_target: 6, asmm: 'OFF', shared_pool_size: 0.5, db_cache_size: 6, pga: 3, processes: 400 },
+    hints: [
+      '先看錯誤率與事件紀錄：共用池只有 0.5 GB，SQL 又大多是字面值，所以不夠用。',
+      '最快的辦法是把 ASMM 打開，並把 SGA 目前大小調到 10 GB。注意原本的資料快取 6 GB 會變成「最小保證值」，所以目前大小要夠大才放得下。這些都是即時生效的。',
+      '就算 ASMM 打開，SGA 目前大小也不能超過 SGA 上限。要放更大的快取，得先把上限調高，那個需要重啟。'
+    ],
+    lessons: [
+      'SGA_MAX_SIZE 是天花板，只能重啟後調整。SGA_TARGET 是目前大小，在天花板以內可以即時調整。',
+      'ASMM 開啟後，共用池與資料快取會自動分配，你設定的 SHARED_POOL_SIZE 和 DB_CACHE_SIZE 只是最小保證值。',
+      'ASMM 關閉時，各區塊就是固定大小。共用池加資料快取不能超過 SGA 上限，否則 Oracle 會拒絕。'
+    ]
+  },
+  {
+    id: 's7', tag: '進階', title: '歸檔日誌塞爆', maxRestarts: 1,
+    extra: ['archivelog', 'fra_size', 'arch_keep', 'arch_procs'],
+    story: '稽核要求資料庫能還原到任意時間點，所以必須改成 ARCHIVELOG。切換之後，歸檔日誌不斷產生，快速復原區（FRA）很快被塞滿，所有寫入都被卡住。你要在維持歸檔的前提下，把空間與歸檔速度調順。快速復原區面板裡的「立即備份並清除歸檔」只能暫時救急。',
+    goal: { lat: 8, err: 0.02, archive: true },
+    w: { ...baseW, ram: 32, cores: 8, users: 200, workingSet: 5, redoMBps: 6, writeMBps: 20, sharedNeed: 1 },
+    cfg: { ...baseCfg, sga_max_size: 10, sga_target: 8, pga: 2, processes: 350, arch_procs: 1, fra_size: 50, arch_keep: 8, log_buffer: 16, dbwr: 2 },
+    hints: [
+      '歸檔模式要在掛載階段切換，所以先把它設好，再重啟。',
+      '重啟後看「快速復原區」那一格。每小時產生的歸檔量乘上保留時數，就是需要的空間。',
+      '空間不夠有兩條路：把 FRA 調大，或把保留時間縮短。兩個都能即時調整。歸檔程序數太少，交易也會等歸檔。'
+    ],
+    lessons: [
+      '切換 ARCHIVELOG 必須在掛載階段完成，所以一定要重啟。',
+      'FRA 需要的空間 = 每小時歸檔量 × 保留時數。空間滿了，整個資料庫的寫入都會停。',
+      '手動備份清掉歸檔只能救急，要靠保留策略與空間大小才穩得住。'
+    ]
+  },
+  {
+    id: 's8', tag: '專家', title: '節點當機也不能停', maxRestarts: 1, need: 60,
+    extra: ['cluster_db', 'rac_nodes', 'svc_route'],
+    story: '公司要求核心系統「任何一台伺服器壞掉，服務也不能中斷」。現在是單一執行個體，每一分鐘就會有一次節點故障。授權預算最多三個節點。你得啟用叢集（RAC），並確保少一個節點時，剩下的還撐得住。目標要連續達標整整 60 秒，中間一定會遇到一次故障。',
+    goal: { lat: 18, err: 0.02, maxNodes: 3 },
+    w: { ...baseW, ram: 32, cores: 8, users: 500, workingSet: 6, literal: 0.1, cpuBase: 14, sharedNeed: 1.2, redoMBps: 2, writeMBps: 20,
+         shareFrac: 0.35, gcCost: 6, failure: { every: 60, at: 30, dur: 15 } },
+    cfg: { ...baseCfg, sga_max_size: 10, sga_target: 8, pga: 2, processes: 200, log_buffer: 16, dbwr: 2 },
+    hints: [
+      '叢集模式（CLUSTER_DATABASE）要重啟才會生效，節點數則要等它啟用後才有作用。',
+      '連線上限 PROCESSES 是每個節點各自一份。少一個節點時，剩下的節點要能接住所有人。',
+      '兩個節點在其中一個壞掉時，剩下一個撐不住 CPU。三個節點壞一個還剩兩個。把服務連線分流固定後，節點間傳資料也會少很多。'
+    ],
+    lessons: [
+      'CLUSTER_DATABASE 要重啟，節點數可以即時增減。',
+      'RAC 的容量規劃看的是「壞一個之後還剩多少」，而不是全部都健康的時候。',
+      '服務分流是新連線才會生效的參數，能大幅減少節點之間互相傳資料區塊。'
+    ]
+  },
+  {
+    id: 's9', tag: '總驗收', title: '上線前總驗收', maxRestarts: 1, need: 70,
+    extra: ['asmm', 'shared_pool_size', 'db_cache_size', 'archivelog', 'fra_size', 'arch_keep', 'arch_procs', 'cluster_db', 'rac_nodes', 'svc_route'],
+    story: '新訂單系統下週上線，這是最後一次調整。需求是：必須使用歸檔模式、至少兩個節點、尖峰不能掛。你接手的設定有好幾個問題，而且大部分要重啟。想清楚再動手，一次重啟全部處理好。目標要連續達標 70 秒，期間會有一次節點故障。',
+    goal: { lat: 16, err: 0.02, archive: true, minNodes: 2, maxNodes: 3 },
+    w: { ...baseW, ram: 48, cores: 8, users: 700, workingSet: 12, literal: 0.5, hardCost: 8, cpuBase: 10, lio: 30, hotCursors: 80, cursorsNeed: 250,
+         sharedNeed: 4, redoMBps: 5, writeMBps: 40, shareFrac: 0.3, gcCost: 6, failure: { every: 70, at: 35, dur: 12 } },
+    cfg: { ...baseCfg, sga_max_size: 14, sga_target: 10, asmm: 'OFF', shared_pool_size: 0.75, db_cache_size: 8, pga: 3, processes: 200,
+           arch_procs: 1, fra_size: 60, arch_keep: 12, log_buffer: 8, dbwr: 1 },
+    hints: [
+      '要重啟的有：歸檔模式、叢集模式、連線上限、日誌緩衝區、資料寫入程序數。先全部寫好再重啟。',
+      '共用池太小，打開 ASMM 或直接調大它。這些是即時生效的。',
+      '算一下 FRA：每小時歸檔量乘保留時數。節點壞一個之後，剩下的節點也要撐得住 CPU 與連線。'
+    ],
+    lessons: [
+      '整套系統的設定可以分成兩批：重啟時一次處理完的，以及上線後隨時能微調的。',
+      '「壞掉一個之後還撐得住」「空間算得過來」「共用池夠用」是三種不同的容量規劃。',
+      '寫入參數檔、重啟、再確認，才是完整的變更流程。'
+    ]
+  }
+];
+
+/* 依難度排序 */
+(function () { const ORDER = ['s1', 's6', 's2', 's3', 's7', 's4', 's5', 's8', 's9']; SCENARIOS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id)); })();
+
+/* ===== 介面與遊戲流程 ===== */
+const $ = (s, r = document) => r.querySelector(s);
+const byKey = Object.fromEntries(PARAMS.map(p => [p.k, p]));
+const needOf = () => (S && S.sc.need) || 15;   // 連續達標秒數
+let S = null, timer = null, speed = 1, rows = {}, scIndex = 0;
+
+let stars = {};
+try { stars = JSON.parse(localStorage.getItem('oracle-lab-stars') || '{}'); } catch (e) { stars = {}; }
+const saveStars = () => { try { localStorage.setItem('oracle-lab-stars', JSON.stringify(stars)); } catch (e) {} };
+
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const mmss = t => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+function range(p) {
+  const ram = S.sc.w.ram;
+  if (p.k === 'sga_max_size' || p.k === 'sga_target') return [1, ram + 8, 1];
+  if (p.k === 'pga') return [0.5, ram, 0.5];
+  if (p.k === 'shared_pool_size') return [0.25, ram, 0.25];
+  if (p.k === 'db_cache_size') return [0.5, ram, 0.5];
+  return [p.min, p.max, p.step];
+}
+function fmt(p, v) {
+  if (p.type === 'seg') return v;
+  if (p.k === 'undo_retention') return (v % 60 === 0 ? v / 60 : (v / 60).toFixed(1)) + ' 分鐘';
+  const s = String(Math.round(v * 100) / 100);
+  return p.unit ? s + ' ' + p.unit : s;
+}
+const baseVal = p => (p.kind === 'static' ? S.spfile[p.k] : S.mem[p.k]);
+
+/* ---------- 狀態 ---------- */
+function newState(sc) {
+  const cfg0 = { ...sc.cfg };
+  return {
+    sc, t: 0, status: 'open', left: 0, mem: { ...cfg0 }, spfile: { ...cfg0, ...(sc.spfileDiff || {}) },
+    lastGood: { ...cfg0 }, staged: {}, pendDef: {}, warm: 1, hist: [], streak: 0, restarts: 0, won: false,
+    flags: {}, log: [], hintN: 0, persist: true, failMsg: '', m: null, confirm: false, msgs: [],
+    nodesEff: sc.cfg.cluster_db === 'TRUE' ? sc.cfg.rac_nodes : 1, fraUsed: 0, backupCd: 0, failing: false, outage: false
+  };
+}
+function log(level, text) { S.log.unshift({ t: S.t, level, text }); if (S.log.length > 40) S.log.pop(); }
+
+function loadScenario(i) {
+  scIndex = i;
+  const sc = SCENARIOS[i];
+  S = newState(sc);
+  for (let t = -40; t < 0; t++) {
+    const r = compute(S.mem, sc.w, t, 1);
+    S.hist.push({ lat: r.lat, tps: r.tps });
+  }
+  S.hist = S.hist.slice(-30);
+  S.m = compute(S.mem, sc.w, 0, 1);
+  log('info', '值班開始，先看看儀表板哪裡不對勁');
+  const fc = $('#fraCard'); fc.dataset.built = ''; fc.hidden = true;
+  renderTabs(); renderStory(); buildParams(); syncParams(true); renderDash(); renderBar();
+  $('#win').hidden = true;
+  schedule();
+}
+
+/* ---------- 一秒一格的模擬 ---------- */
+function tick() {
+  S.t++;
+  if (['stopping', 'nomount', 'mount'].includes(S.status)) {
+    S.m = null; S.hist.push({ lat: null, tps: 0 }); advanceStartup();
+  } else if (S.status === 'failed') {
+    S.m = null; S.hist.push({ lat: null, tps: 0 });
+  } else {
+    S.warm = Math.min(1, S.warm + 0.05);
+    for (const k of Object.keys(S.pendDef)) {
+      S.pendDef[k].left--;
+      if (S.pendDef[k].left <= 0) {
+        S.mem[k] = S.pendDef[k].v; delete S.pendDef[k];
+        log('ok', `${byKey[k].label} 已套用到新連線`); syncParams(true);
+      }
+    }
+    stepCluster();
+    const r = compute(S.mem, S.sc.w, S.t, S.warm, { nodes: S.nodesEff, fraUsed: S.fraUsed });
+    const wasFail = S.failing; S.failing = !!r.failing; S.outage = !!r.outage;
+    if (S.failing && !wasFail) log(r.outage ? 'crit' : 'warn', r.outage ? '伺服器故障，單一執行個體整個停擺，服務中斷' : `一個節點故障，剩下 ${Math.round(r.alive)} 個節點接手`);
+    if (!S.failing && wasFail) log('ok', r.outage ? '服務恢復' : '故障的節點已重新加入叢集');
+    if (r.outage) { S.m = null; S.streak = 0; S.hist.push({ lat: null, tps: 0 }); }
+    else { S.m = r; S.hist.push({ lat: r.lat, tps: r.tps }); watchFlags(); checkGoal(); }
+  }
+  if (S.hist.length > 60) S.hist.shift();
+  renderDash(); syncParams(false);
+}
+
+function stepCluster() {
+  const racOn = S.mem.cluster_db === 'TRUE', target = racOn ? S.mem.rac_nodes : 1, old = S.nodesEff;
+  S.nodesEff = old < target ? Math.min(target, old + 0.2) : target;
+  const a = Math.floor(S.nodesEff + 1e-9), b = Math.floor(old + 1e-9);
+  if (a > b) log('ok', `節點 ${a} 已加入叢集`);
+  if (a < b) log('warn', `節點數降為 ${a}`);
+  if (S.mem.archivelog === 'ARCHIVELOG') S.fraUsed += (fraTargetOf(S.mem, S.sc.w) - S.fraUsed) * 0.02; else S.fraUsed = 0;
+  if (S.backupCd > 0) S.backupCd--;
+}
+function flag(key, on, bad, good) {
+  if (on && !S.flags[key]) { S.flags[key] = 1; log('crit', bad); }
+  else if (!on && S.flags[key]) { S.flags[key] = 0; log('ok', good); }
+}
+function watchFlags() {
+  const m = S.m, p = m.parts;
+  flag('conn', p.conn > 0.01, '連線被拒絕：已達 PROCESSES 上限 (ORA-00020)', '連線數恢復正常');
+  flag('cur', p.cur > 0.01, '游標數超過上限，部分交易失敗 (ORA-01000)', '游標錯誤已消失');
+  flag('snap', p.snap > 0.01, '報表因快照太舊而失敗 (ORA-01555)', '報表不再因快照太舊失敗');
+  flag('undo', p.undo > 0.01, 'Undo 空間被保留時間塞滿 (ORA-30036)', 'Undo 空間恢復');
+  flag('swap', m.swap, '實體記憶體不足，系統開始換頁，所有東西都變慢', '記憶體壓力解除');
+  flag('spill', m.spill > 0.3, '大量排序溢出到磁碟', '排序回到記憶體內');
+  flag('shared', p.shared > 0.01, '共用池不足，無法配置共用記憶體 (ORA-04031)', '共用池夠用了');
+  flag('arch', m.fraFull, '快速復原區已滿，所有寫入被卡住 (ORA-00257)', '快速復原區有空間了，寫入恢復');
+  flag('archwait', S.mem.archivelog === 'ARCHIVELOG' && m.waits.some(x => x.k === 'archwait' && x.pct > 0.2), '歸檔速度跟不上，交易在等歸檔程序', '歸檔速度跟上了');
+  const near = S.mem.archivelog === 'ARCHIVELOG' && !m.fraFull && m.fraUsed >= S.mem.fra_size * 0.8;
+  if (near && !S.flags.fraNear) { S.flags.fraNear = 1; log('warn', '快速復原區已用超過 80%'); } else if (!near) S.flags.fraNear = 0;
+}
+function checkGoal() {
+  const g = S.sc.goal, m = S.m;
+  const nn = S.mem.cluster_db === 'TRUE' ? S.mem.rac_nodes : 1;
+  const ok = m.lat <= g.lat && m.err <= g.err && S.warm >= 0.9
+    && (!g.archive || S.mem.archivelog === 'ARCHIVELOG')
+    && (!g.maxNodes || nn <= g.maxNodes) && (!g.minNodes || nn >= g.minNodes) && S.nodesEff >= nn - 0.01;
+  if (ok) S.streak++; else S.streak = 0;
+  if (S.streak >= needOf() && !S.won) win();
+}
+
+/* ---------- 重啟流程 ---------- */
+function startRestart() {
+  S.confirm = false; S.restarts++; S.status = 'stopping'; S.left = 2; S.streak = 0; S.pendDef = {};
+  log('warn', '資料庫正在關閉，所有連線中斷');
+  renderBar(); renderDash();
+}
+function advanceStartup() {
+  S.left--;
+  if (S.left > 0) return;
+  if (S.status === 'stopping') { S.status = 'nomount'; S.left = 2; log('info', '啟動執行個體，讀取參數檔'); }
+  else if (S.status === 'nomount') { S.status = 'mount'; S.left = 2; log('info', '掛載資料庫'); }
+  else if (S.status === 'mount') {
+    const chk = startupCheck(S.spfile, S.sc.w);
+    if (chk.ok) {
+      const prev = { ...S.mem };
+      S.mem = { ...S.spfile };
+      S.mem.sga_target = Math.min(S.mem.sga_target, S.mem.sga_max_size);
+      if (prev.archivelog !== S.mem.archivelog) log('ok', S.mem.archivelog === 'ARCHIVELOG' ? '已在掛載階段切換為歸檔模式' : '已在掛載階段切換為非歸檔模式');
+      S.nodesEff = S.mem.cluster_db === 'TRUE' ? S.mem.rac_nodes : 1;
+      if (S.mem.cluster_db === 'TRUE' && prev.cluster_db !== 'TRUE') log('ok', `叢集已啟動，${S.mem.rac_nodes} 個節點上線`);
+      S.spfile.sga_target = S.mem.sga_target;
+      S.status = 'open'; S.warm = 0.05; S.lastGood = { ...S.spfile }; S.streak = 0;
+      log('ok', '資料庫已開放。資料快取是空的，需要預熱');
+      syncParams(true);
+    } else {
+      S.status = 'failed'; S.failMsg = chk.msg; log('crit', chk.msg);
+    }
+    renderBar();
+  }
+}
+function retryStart(useBackup) {
+  if (useBackup) { S.spfile = { ...S.lastGood }; log('info', '改用備份參數檔（PFILE）啟動'); syncParams(true); }
+  S.restarts++; S.status = 'nomount'; S.left = 2; S.confirm = false;
+  renderBar(); renderDash();
+}
+
+/* ---------- 參數面板 ---------- */
+function buildParams() {
+  const wrap = $('#params'); wrap.innerHTML = ''; rows = {};
+  GROUPS.forEach(g => {
+    const card = el('section', 'pgroup', `<h3>${g.title}</h3>`);
+    PARAMS.filter(p => p.group === g.id && (!p.adv || (S.sc.extra || []).includes(p.k))).forEach(p => {
+      const kd = KIND[p.kind];
+      const row = el('div', 'prow');
+      let ctl;
+      if (p.type === 'seg') {
+        ctl = `<div class="seg" role="group" aria-label="${p.label}">${p.options.map(o => `<button type="button" data-act="seg" data-k="${p.k}" data-v="${o[0]}" aria-pressed="false">${o[1]}</button>`).join('')}</div>`;
+      } else {
+        const [mn, mx, st] = range(p);
+        ctl = `<input type="range" id="in-${p.k}" min="${mn}" max="${mx}" step="${st}" aria-label="${p.label}"><output id="out-${p.k}" for="in-${p.k}"></output>`;
+      }
+      row.innerHTML = `<div class="ptop"><label class="plabel" for="in-${p.k}">${p.label}<span class="chip" hidden>已修改</span></label><span class="badge ${kd.cls}">${kd.text}</span></div>
+        <code class="pname">${p.name}</code><div class="pctl">${ctl}</div><p class="phint">${p.hint}</p><p class="pnote"></p>`;
+      card.appendChild(row);
+      rows[p.k] = { el: row, input: row.querySelector('input'), out: row.querySelector('output'), note: row.querySelector('.pnote'), chip: row.querySelector('.chip'), segs: [...row.querySelectorAll('.seg button')] };
+      if (rows[p.k].input) rows[p.k].input.addEventListener('input', e => setStaged(p, Number(e.target.value)));
+    });
+    if (card.children.length > 1) wrap.appendChild(card);
+  });
+}
+function setStaged(p, v) {
+  if (v === baseVal(p)) delete S.staged[p.k]; else S.staged[p.k] = v;
+  S.msgs = []; syncParams(false); renderBar();
+}
+function syncParams(force) {
+  PARAMS.forEach(p => {
+    const r = rows[p.k]; if (!r) return;
+    const k = p.k, base = baseVal(p), cur = k in S.staged ? S.staged[k] : base;
+    if (r.input) {
+      if (force || document.activeElement !== r.input) r.input.value = cur;
+      r.out.textContent = fmt(p, cur);
+    } else {
+      r.segs.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === cur)));
+    }
+    r.el.classList.toggle('staged', k in S.staged);
+    r.chip.hidden = !(k in S.staged);
+    const mem = S.mem[k], sp = S.spfile[k];
+    let note = '', cls = '';
+    if (k in S.pendDef) { note = `新連線陸續套用中，約 ${S.pendDef[k].left} 秒`; cls = 'warn'; }
+    else if (p.kind === 'static' && mem !== sp) { note = `執行中 ${fmt(p, mem)} → 參數檔已是 ${fmt(p, sp)}，重啟後生效`; cls = 'pend'; }
+    else if (p.kind !== 'static' && mem !== sp) { note = `執行中 ${fmt(p, mem)}，參數檔是 ${fmt(p, sp)}，重啟後會變回 ${fmt(p, sp)}`; cls = 'warn'; }
+    else note = `執行中 ${fmt(p, mem)}`;
+    r.note.textContent = note; r.note.className = 'pnote ' + cls;
+  });
+}
+
+/* ---------- 套用 ---------- */
+function applyChanges() {
+  const msgs = [];
+  const memKeys = ['asmm', 'sga_target', 'shared_pool_size', 'db_cache_size'], blocked = new Set();
+  const overMax = k => k === 'sga_target' && S.staged[k] > S.mem.sga_max_size;
+  if (S.status === 'open' && memKeys.some(k => k in S.staged)) {
+    const cand = { ...S.mem };
+    memKeys.forEach(k => { if (k in S.staged && !overMax(k)) cand[k] = S.staged[k]; });
+    const v = validateSga({ ...cand, sga_target: Math.min(cand.sga_target, cand.sga_max_size) });
+    if (!v.ok) { memKeys.forEach(k => { if (k in S.staged && !overMax(k)) blocked.add(k); }); msgs.push(['e', v.msg]); }
+  }
+  for (const k of Object.keys(S.staged)) {
+    if (blocked.has(k)) continue;
+    const p = byKey[k], v = S.staged[k], name = p.label;
+    if (p.kind === 'static') {
+      S.spfile[k] = v; msgs.push(['i', `${name} 已寫入參數檔，重啟後才會生效`]);
+    } else if (S.status !== 'open') {
+      S.spfile[k] = v; msgs.push(['i', `資料庫沒在運行，${name} 只寫入參數檔`]);
+    } else if (k === 'sga_target' && v > S.mem.sga_max_size) {
+      if (S.persist) { S.spfile[k] = v; msgs.push(['i', `${name} 超過目前 SGA 上限 ${S.mem.sga_max_size} GB，已寫入參數檔，重啟後生效`]); }
+      else { msgs.push(['e', `${name} 不能超過 SGA 上限 ${S.mem.sga_max_size} GB。要調高上限得先重啟`]); continue; }
+    } else if (p.kind === 'dynamic') {
+      S.mem[k] = v; if (S.persist) S.spfile[k] = v;
+      msgs.push(k === 'rac_nodes' && S.mem.cluster_db !== 'TRUE'
+        ? ['i', `${name} 已設定，要等叢集模式啟用（需重啟）後才有作用`]
+        : ['o', `${name} 已即時生效` + (S.persist ? '' : '（未保存，重啟會消失）')]);
+      log('info', `${name} 即時調整為 ${fmt(p, v)}`);
+    } else {
+      S.pendDef[k] = { v, left: 6 }; if (S.persist) S.spfile[k] = v;
+      msgs.push(['i', `${name} 只對新連線生效，舊連線陸續換新`]);
+    }
+    delete S.staged[k];
+  }
+  S.msgs = msgs; syncParams(true); renderBar();
+  if (S.status === 'open') {
+    const r = compute(S.mem, S.sc.w, S.t, S.warm, { nodes: S.nodesEff, fraUsed: S.fraUsed });
+    S.m = r.outage ? null : r; renderDash();
+  }
+}
+
+/* ---------- 過關 ---------- */
+function win() {
+  S.won = true;
+  const sc = S.sc;
+  const keys = Object.keys(S.mem);
+  const saved = keys.every(k => S.mem[k] === S.spfile[k]) && Object.keys(S.pendDef).length === 0;
+  const few = S.restarts <= sc.maxRestarts;
+  const n = 1 + (few ? 1 : 0) + (saved ? 1 : 0);
+  stars[sc.id] = Math.max(stars[sc.id] || 0, n); saveStars();
+  const next = SCENARIOS[scIndex + 1];
+  $('#winBox').innerHTML = `<h2 id="winTitle">過關：${sc.title}</h2>
+    <div class="big" aria-label="${n} 顆星">${'★'.repeat(n)}${'☆'.repeat(3 - n)}</div>
+    <ul>
+      <li><span class="mk">✓</span>連續 ${needOf()} 秒達到目標</li>
+      <li class="${few ? '' : 'no'}"><span class="mk">${few ? '✓' : '✗'}</span>重啟次數 ${S.restarts} 次（${sc.maxRestarts === 0 ? '這關不需要重啟' : '最多 ' + sc.maxRestarts + ' 次拿滿星'}）</li>
+      <li class="${saved ? '' : 'no'}"><span class="mk">${saved ? '✓' : '✗'}</span>${saved ? '所有設定都已寫入參數檔，重啟不會跑掉' : '還有設定只存在記憶體或尚未重啟，下次重啟會變回去'}</li>
+    </ul>
+    <h4>這一關學到的事</h4>
+    <ul>${sc.lessons.map(t => `<li><span class="mk">•</span><span>${t}</span></li>`).join('')}</ul>
+    <div class="row">
+      <button class="btn" data-act="closewin">繼續觀察</button>
+      <button class="btn" data-act="reset">重玩</button>
+      ${next ? `<button class="btn primary" data-act="scn" data-i="${scIndex + 1}">下一關：${next.title}</button>` : ''}
+    </div>`;
+  $('#win').hidden = false;
+  renderTabs();
+}
+
+/* ---------- 畫面 ---------- */
+function renderTabs() {
+  $('#tabs').innerHTML = SCENARIOS.map((sc, i) => {
+    const n = stars[sc.id] || 0;
+    return `<button class="tab" data-act="scn" data-i="${i}" aria-current="${i === scIndex}">
+      <small>${i + 1} · ${sc.tag}</small><b>${sc.title}</b><span class="st">${'★'.repeat(n)}${'☆'.repeat(3 - n)}</span></button>`;
+  }).join('');
+}
+function renderStory() {
+  const sc = S.sc, g = sc.goal;
+  $('#story').innerHTML = `<span class="tag">${sc.tag}</span><h2>${sc.title}</h2><p>${sc.story}</p>
+    <ul class="goals">
+      <li id="g-lat"><span class="mk">·</span><span>回應時間 ≤ ${g.lat} ms</span><span class="cur"></span></li>
+      <li id="g-err"><span class="mk">·</span><span>錯誤率 ≤ ${(g.err * 100).toFixed(0)}%</span><span class="cur"></span></li>
+      <li id="g-warm"><span class="mk">·</span><span>資料庫開放，且資料快取預熱完成</span><span class="cur"></span></li>
+      ${g.archive ? '<li id="g-arch"><span class="mk">·</span><span>必須是歸檔模式 (ARCHIVELOG)</span><span class="cur"></span></li>' : ''}
+      ${(g.minNodes || g.maxNodes) ? `<li id="g-nodes"><span class="mk">·</span><span>叢集節點數 ${g.minNodes || 1} 到 ${g.maxNodes} 個（授權預算）</span><span class="cur"></span></li>` : ''}
+    </ul>
+    <div class="streak"><div class="sbar"><i id="streakBar" style="width:0"></i></div><span id="streakTxt"></span></div>
+    <div class="hintrow"><button class="btn ghost" data-act="hint" id="hintBtn"></button><ul class="hints" id="hints"></ul></div>`;
+  renderHints();
+}
+function renderHints() {
+  const sc = S.sc;
+  $('#hints').innerHTML = sc.hints.slice(0, S.hintN).map(h => `<li>${h}</li>`).join('');
+  const b = $('#hintBtn');
+  b.textContent = S.hintN >= sc.hints.length ? '提示用完了' : `給我提示（${S.hintN}/${sc.hints.length}）`;
+  b.disabled = S.hintN >= sc.hints.length;
+}
+function latTxt(v) { return v >= 1000 ? { v: (v / 1000).toFixed(2), u: 's' } : { v: v >= 100 ? v.toFixed(0) : v.toFixed(1), u: 'ms' }; }
+function niceMax(v) { const p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+
+function renderDash() {
+  const sc = S.sc, g = sc.goal, m = S.m, st = S.status;
+  /* 狀態 */
+  const idx = { stopping: 0, nomount: 1, mount: 2, open: 3, failed: -1 }[st];
+  const lamp = st === 'open' ? (S.outage ? 'crit' : S.failing ? 'warn' : '') : st === 'failed' ? 'crit' : 'warn';
+  const names = ['關閉', '啟動執行個體', '掛載資料庫', '開放使用'];
+  const label = { open: S.outage ? '服務中斷（伺服器故障）' : S.failing ? '運行中（一個節點故障）' : '運行中', stopping: '正在關閉', nomount: '正在啟動', mount: '正在掛載', failed: '無法啟動' }[st];
+  const extra = st === 'open' ? (S.warm < 1 ? `快取預熱 ${Math.round(S.warm * 100)}%` : `已執行 ${mmss(S.t)}`) : '';
+  $('#status').innerHTML = `<div class="stat-top"><i class="lamp ${lamp}"></i><b>${label}</b><span>${extra}</span>${speed === 0 ? '<span>（模擬已暫停）</span>' : ''}</div>
+    <ol class="steps" style="list-style:none;padding:0;margin:10px 0 0">${names.map((n, i) => `<li class="${st === 'open' ? 'on' : (i < idx ? 'on' : i === idx ? 'cur' : '')}">${n}</li>`).join('')}</ol>
+    ${st === 'failed' ? `<div class="failbox"><p>${esc(S.failMsg)}</p><div class="row">
+      <button class="btn" data-act="retry">用目前參數檔再試</button>
+      <button class="btn primary" data-act="pfile">用備份參數檔啟動</button></div></div>` : ''}`;
+  /* KPI */
+  const none = '<small></small>';
+  let k1, k2, k3, k4;
+  if (m) {
+    const l = latTxt(m.lat), ls = m.lat <= g.lat ? 'ok' : m.lat <= g.lat * 2.5 ? 'warn' : 'crit';
+    const es = m.err <= g.err ? 'ok' : m.err <= 0.05 ? 'warn' : 'crit';
+    const hs = m.hit >= 0.9 ? 'ok' : m.hit >= 0.7 ? 'warn' : 'crit';
+    k1 = tile('回應時間', l.v, l.u, ls, `目標 ≤ ${g.lat} ms`);
+    k2 = tile('錯誤率', (m.err * 100).toFixed(1), '%', es, `目標 ≤ ${(g.err * 100).toFixed(0)}%`);
+    k3 = tile('每秒交易數', Math.round(m.tps), 'TPS', 'none', `連線 ${Math.round(m.connected)} / ${m.users}`);
+    k4 = tile('快取命中率', (m.hit * 100).toFixed(1), '%', hs, `硬解析 ${Math.round(m.hardPerSec)} 次/秒 · CPU ${Math.round(m.cpuUtil * 100)}%`);
+  } else {
+    k1 = tile('回應時間', '—', '', 'none', `目標 ≤ ${g.lat} ms`); k2 = tile('錯誤率', '100', '%', 'crit', '服務中斷');
+    k3 = tile('每秒交易數', '0', 'TPS', 'none', ''); k4 = tile('快取命中率', '—', '', 'none', '');
+  }
+  $('#kpis').innerHTML = k1 + k2 + k3 + k4;
+  /* 圖 */
+  chart('#cLat', S.hist.map(h => h.lat), { goal: g.lat, fy: v => { const t = latTxt(v); return t.v + t.u; } });
+  chart('#cTps', S.hist.map(h => h.tps), { fy: v => String(Math.round(v)) });
+  /* 記憶體 */
+  const ram = sc.w.ram, sga = S.mem.sga_target > S.mem.sga_max_size ? S.mem.sga_max_size : S.mem.sga_target;
+  const down = st !== 'open';
+  const rsv = down ? 0 : Math.max(0, S.mem.sga_max_size - sga), pgaV = down ? 0 : S.mem.pga, sgaV = down ? 0 : sga, os = 1;
+  const used = os + sgaV + pgaV, over = Math.max(0, used - ram);
+  const scale = Math.max(ram, used + (over ? 0 : rsv));
+  const w = v => (v / scale * 100).toFixed(2) + '%';
+  const free = Math.max(0, ram - used - rsv);
+  $('#mem').innerHTML = `<div class="membar" role="img" aria-label="記憶體使用">
+      <i class="m-os" style="width:${w(os)}"></i><i class="m-sga" style="width:${w(sgaV)}"></i><i class="m-pga" style="width:${w(pgaV)}"></i>
+      <i class="m-rsv" style="width:${w(over ? 0 : Math.min(rsv, ram - used))}"></i>${over ? `<i class="m-over" style="width:${w(over)}"></i>` : ''}</div>
+    <div class="legend"><span style="--c:var(--ink2)">系統 1 GB</span><span style="--c:var(--accent)">SGA ${sgaV} GB</span><span style="--c:var(--ok)">PGA ${pgaV} GB</span><span style="--c:var(--accent-bg)">SGA 預留空間</span><span style="--c:var(--line)">剩餘 ${free.toFixed(1)} GB / 共 ${ram} GB</span></div>
+    ${over ? `<p class="memnote">超出實體記憶體 ${over.toFixed(1)} GB，作業系統開始換頁</p>` : ''}
+    ${(sc.extra || []).includes('asmm') && m ? `<p class="phint">SGA 裡面：共用池 ${m.sharedG.toFixed(1)} GB，資料快取 ${m.cacheG.toFixed(1)} GB（${m.asmmOn ? '系統自動分配' : '你指定的固定大小'}）</p>` : ''}
+    ${S.mem.cluster_db === 'TRUE' ? '<p class="phint">叢集模式：每個節點各有一份 SGA 與 PGA。</p>' : ''}`;
+  renderRac(); renderFra();
+  /* 等待事件 */
+  if (m) {
+    $('#waits').innerHTML = m.waits.slice(0, 5).map(x => `<div class="wait"><div class="wn"><b>${WAITS[x.k].zh}</b><code>${WAITS[x.k].en}</code></div>
+      <span class="wp">${Math.round(x.pct * 100)}%</span><div class="wb"><i style="width:${Math.max(2, x.pct * 100).toFixed(1)}%"></i></div></div>`).join('');
+  } else $('#waits').innerHTML = S.outage ? '<p class="phint">所有節點都停了，沒有任何服務在運作</p>' : '<p class="phint">資料庫沒有在運行</p>';
+  /* 紀錄 */
+  $('#log').innerHTML = S.log.slice(0, 7).map(l => `<li><time>${mmss(l.t)}</time><span class="${l.level}">${esc(l.text)}</span></li>`).join('');
+  /* 目標 */
+  const gl = $('#g-lat'); if (!gl) return;
+  const setG = (id, ok, txt) => { const e = $(id); e.className = ok === null ? '' : ok ? 'pass' : 'fail'; e.querySelector('.mk').textContent = ok === null ? '·' : ok ? '✓' : '✗'; e.querySelector('.cur').textContent = txt; };
+  if (m) {
+    setG('#g-lat', m.lat <= g.lat, '目前 ' + latTxt(m.lat).v + ' ' + latTxt(m.lat).u);
+    setG('#g-err', m.err <= g.err, '目前 ' + (m.err * 100).toFixed(1) + '%');
+    setG('#g-warm', S.warm >= 0.9, Math.round(S.warm * 100) + '%');
+  } else { setG('#g-lat', null, '—'); setG('#g-err', null, '—'); setG('#g-warm', false, '重啟中'); }
+  if ($('#g-arch')) setG('#g-arch', S.mem.archivelog === 'ARCHIVELOG', S.mem.archivelog === 'ARCHIVELOG' ? '已開啟' : '尚未開啟');
+  if ($('#g-nodes')) {
+    const nn = S.mem.cluster_db === 'TRUE' ? S.mem.rac_nodes : 1;
+    setG('#g-nodes', (!g.minNodes || nn >= g.minNodes) && (!g.maxNodes || nn <= g.maxNodes), `目前 ${nn} 個`);
+  }
+  $('#streakBar').style.width = (Math.min(S.streak, needOf()) / needOf() * 100) + '%';
+  $('#streakTxt').textContent = `連續達標 ${Math.min(S.streak, needOf())} / ${needOf()} 秒`;
+}
+function renderRac() {
+  const c = $('#racCard');
+  c.hidden = !(S.sc.extra || []).includes('cluster_db');
+  if (c.hidden) return;
+  const racOn = S.mem.cluster_db === 'TRUE', target = racOn ? S.mem.rac_nodes : 1, whole = Math.floor(S.nodesEff + 1e-9);
+  let boxes = '';
+  for (let i = 1; i <= target; i++) {
+    let cls = 'up', txt = '運作中';
+    if (S.status !== 'open') { cls = ''; txt = '停止'; }
+    else if (S.outage) { cls = 'fail'; txt = '故障'; }
+    else if (i > whole) { cls = 'boot'; txt = '啟動中'; }
+    else if (S.failing && i === whole) { cls = 'fail'; txt = '故障'; }
+    boxes += `<div class="node ${cls}"><b>${racOn ? '節點 ' + i : '單一執行個體'}</b><span>${txt}</span></div>`;
+  }
+  const m = S.m;
+  const line = !racOn ? '目前是單一執行個體，這台壞了整個服務就停。'
+    : `每個節點最多 ${Math.max(0, S.mem.processes - 40)} 個連線。` + (m ? `目前每個節點約 ${Math.round(m.users / Math.max(1, m.alive))} 位使用者。` : '');
+  c.innerHTML = `<h4>叢集節點</h4><div class="nodes">${boxes}</div><p class="phint" style="margin-top:8px">${line}</p>`;
+}
+function renderFra() {
+  const c = $('#fraCard');
+  c.hidden = !(S.sc.extra || []).includes('archivelog');
+  if (c.hidden) return;
+  if (!c.dataset.built) {
+    c.innerHTML = `<h4>快速復原區 (FRA)</h4>
+      <div id="fraOn"><div class="fra" id="fraBox"><div class="fbar"><i id="fraBar"></i></div>
+        <div class="fl"><span id="fraTxt"></span><span id="fraSt"></span></div></div>
+        <p class="phint" id="fraInfo" style="margin-top:6px"></p>
+        <button class="btn" data-act="backup" id="fraBtn"></button></div>
+      <p class="phint" id="fraOff">目前是 NOARCHIVELOG，不會保留歸檔日誌。切換成 ARCHIVELOG 需要重啟。</p>`;
+    c.dataset.built = '1';
+  }
+  const on = S.mem.archivelog === 'ARCHIVELOG';
+  $('#fraOn').hidden = !on; $('#fraOff').hidden = on;
+  if (!on) return;
+  const size = S.mem.fra_size, used = Math.min(S.fraUsed, size), pct = used / size;
+  const state = pct >= 0.98 ? 'crit' : pct >= 0.8 ? 'warn' : 'ok', w = S.sc.w;
+  $('#fraBox').className = 'fra ' + state;
+  $('#fraBar').style.width = (pct * 100).toFixed(1) + '%';
+  $('#fraTxt').textContent = `${used.toFixed(0)} / ${size} GB`;
+  $('#fraSt').textContent = state === 'crit' ? '已滿，寫入被卡住' : state === 'warn' ? '快滿了' : '空間充足';
+  $('#fraInfo').textContent = `每小時產生約 ${(w.redoMBps * 3.6).toFixed(0)} GB，保留 ${S.mem.arch_keep} 小時，穩定後約佔 ${fraTargetOf(S.mem, w).toFixed(0)} GB。`;
+  const b = $('#fraBtn'); b.disabled = !(S.status === 'open' && S.backupCd === 0);
+  b.textContent = S.backupCd > 0 ? `冷卻中 ${S.backupCd} 秒` : '立即備份並清除歸檔';
+}
+function tile(label, val, unit, state, sub) {
+  return `<div class="kpi k-${state}"><span class="kl">${label}</span><b class="kv">${val}<small>${unit}</small></b><span class="ks">${sub}</span></div>`;
+}
+
+function chart(sel, data, o) {
+  const W = 400, H = 120, L = 44, R = 10, T = 10, B = 14, pw = W - L - R, ph = H - T - B;
+  const vals = data.filter(v => v != null);
+  const mx = Math.max(1e-9, ...vals, o.goal || 0);
+  const top = niceMax(Math.max(mx * 1.15, o.goal ? o.goal * 1.8 : 0));
+  const X = i => L + (i + (60 - data.length)) / 59 * pw, Y = v => T + ph - Math.min(v, top) / top * ph;
+  let out = '';
+  [0, 0.5, 1].forEach(f => {
+    const y = T + ph - f * ph;
+    out += `<line class="gl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="tx" x="${L - 5}" y="${y + 3}" text-anchor="end">${o.fy(top * f)}</text>`;
+  });
+  if (o.goal) {
+    const y = Y(o.goal);
+    out += `<line class="gd" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="gt" x="${W - R}" y="${y - 4}" text-anchor="end">目標</text>`;
+  }
+  let seg = [];
+  const flush = () => {
+    if (seg.length) {
+      const pts = seg.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+      out += `<polygon class="ar" points="${seg[0][0].toFixed(1)},${T + ph} ${pts} ${seg[seg.length - 1][0].toFixed(1)},${T + ph}"/><polyline class="ln" points="${pts}"/>`;
+    }
+    seg = [];
+  };
+  data.forEach((v, i) => { if (v == null) flush(); else seg.push([X(i), Y(v)]); });
+  const last = seg[seg.length - 1];
+  flush();
+  if (last) out += `<circle class="dot" cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4"/>`;
+  $(sel).innerHTML = out;
+}
+
+function renderBar() {
+  const st = S.staged, keys = Object.keys(st), stt = S.status;
+  let h = '';
+  if (keys.length) {
+    h += `<div><h4>待套用的變更</h4><ul class="chg">${keys.map(k => {
+      const p = byKey[k], kd = KIND[p.kind];
+      return `<li><span class="badge ${kd.cls}">${kd.text}</span><span>${p.label}</span><span class="cv">${fmt(p, baseVal(p))} → ${fmt(p, st[k])}</span></li>`;
+    }).join('')}</ul>
+      <label class="persist"><input type="checkbox" id="persist" ${S.persist ? 'checked' : ''}> 永久保存（同時寫入參數檔）</label>
+      <div class="row"><button class="btn primary" data-act="apply">套用變更</button><button class="btn" data-act="discard">放棄變更</button></div></div>`;
+  } else if (!S.msgs.length) {
+    h += '<p class="bar-idle">調整上面的參數，變更會先列在這裡，確認後再套用。</p>';
+  }
+  if (S.msgs.length) h += `<ul class="msgs">${S.msgs.map(([c, t]) => `<li class="${c}">${esc(t)}</li>`).join('')}</ul>`;
+  const pend = Object.keys(S.spfile).filter(k => S.spfile[k] !== S.mem[k]);
+  if (pend.length && stt === 'open') {
+    h += `<hr class="divider"><div><h4>下次重啟後的差異</h4><ul class="pend">${pend.map(k => {
+      const p = byKey[k];
+      return `<li>${p.name}：${fmt(p, S.mem[k])} → ${fmt(p, S.spfile[k])}${p.kind === 'static' ? '（待生效）' : '（會被還原）'}</li>`;
+    }).join('')}</ul></div>`;
+  }
+  if (S.confirm) {
+    h += `<div class="confirm"><p>重新啟動會中斷所有連線並清空資料快取。${pend.length ? '參數檔的內容會在這時載入。' : '目前參數檔沒有待生效的變更。'}</p>
+      <div class="row"><button class="btn danger" data-act="restart-yes">確定重新啟動</button><button class="btn" data-act="restart-no">取消</button></div></div>`;
+  } else {
+    h += `<div class="row"><button class="btn" data-act="restart" ${stt === 'open' ? '' : 'disabled'}>${stt === 'open' ? '重新啟動資料庫' : stt === 'failed' ? '請先處理上方的啟動失敗' : '重新啟動中…'}</button></div>`;
+  }
+  $('#bar').innerHTML = h;
+}
+
+/* ---------- 事件 ---------- */
+function schedule() { clearInterval(timer); if (speed > 0) timer = setInterval(tick, 1000 / speed); }
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  switch (a.dataset.act) {
+    case 'scn': loadScenario(Number(a.dataset.i)); break;
+    case 'reset': loadScenario(scIndex); break;
+    case 'speed':
+      speed = Number(a.dataset.v);
+      document.querySelectorAll('.speed button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.v) === speed)));
+      schedule(); renderDash(); break;
+    case 'seg': { const p = byKey[a.dataset.k]; setStaged(p, a.dataset.v); break; }
+    case 'apply': applyChanges(); break;
+    case 'discard': S.staged = {}; S.msgs = []; syncParams(true); renderBar(); break;
+    case 'restart': S.confirm = true; renderBar(); break;
+    case 'restart-no': S.confirm = false; renderBar(); break;
+    case 'restart-yes': startRestart(); break;
+    case 'retry': retryStart(false); break;
+    case 'pfile': retryStart(true); break;
+    case 'hint': if (S.hintN < S.sc.hints.length) { S.hintN++; renderHints(); } break;
+    case 'backup':
+      if (S.status === 'open' && S.backupCd === 0 && S.mem.archivelog === 'ARCHIVELOG') {
+        S.fraUsed *= 0.35; S.backupCd = 12; log('ok', '已備份並清除歸檔日誌，快速復原區釋出空間（只是暫時）'); renderDash();
+      } break;
+    case 'closewin': $('#win').hidden = true; break;
+  }
+});
+document.addEventListener('change', e => { if (e.target.id === 'persist') S.persist = e.target.checked; });
+
+/* 內容沒變就不重畫，避免按鈕在使用者按下的瞬間被換掉 */
+['status', 'kpis', 'mem', 'waits', 'log', 'racCard'].forEach(id => {
+  const e = document.getElementById(id), d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(e, 'innerHTML', { set(v) { if (this._h !== v) { this._h = v; d.set.call(this, v); } }, get() { return d.get.call(this); } });
+});
+loadScenario(0);
+</script>
+
+</body></html>
